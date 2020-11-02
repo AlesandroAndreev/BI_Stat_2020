@@ -1,0 +1,503 @@
+---
+title: "First project"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    number_section: yes
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+# Первое проектное задание:"На сколько стара мидия"
+
+## Создание набора данных для анализа
+
+Перед тем как приступить к рассмотрению результатов исследовательской работы необходимо,чтобы в  рабочей среде были установлены все необходимые пакеты. Для данной задачи применим функцию “require”, которая способна не только подключать пакет, но и скачивать его по необходимости. 
+
+```{r Required packages, message  =  FALSE}
+require(tidyverse)
+require(dplyr)
+require(psych)
+require(RColorBrewer)
+require(grid)
+require(ggplot2)
+require(tidyr)
+require(purrr)
+require(ggpubr)
+require(PerformanceAnalytics)
+require(plyr)
+require(rstudioapi)
+```
+
+После того как все пакеты поодключены, необходимо создать функцию,которая способна собрать все исследовательские данные воедино, для этого используем объединим вместе 3 функции - “list.files”, “lapply()”,“read.csv”. “list.files” - осуществляет поиск всех файлов с расширением .csv, “lapply()” и “read.csv” в свою очередь отвечают за сборку нового набора данных. После применения функции выведем краткую сводку по созданному набору данных.
+
+```{r Creating dataframe,echo=FALSE, message  =  FALSE, warning=FALSE}
+
+data_collector <- function(way){
+  
+datas <- list.files(way, "*.csv",full.names = TRUE) %>% 
+    lapply(read.csv) 
+data <- do.call("rbind",datas)
+
+return(data)
+}
+
+script_path <- rstudioapi::getActiveDocumentContext()$path
+path <- dirname(script_path)
+
+#way <- "put your way here"
+#test_data <- data_collector(way)
+
+test_data <- data_collector(path)
+
+str(test_data)
+```
+## EDA собранных данных. Визуализация и чистка
+
+После визуальной оценки колонок становится видно, что некоторые переменные являются строками, это может  сведетельствовать о наличии каких - то неверных значений. Для того чтобы осуществить чистку данных, необходимо получить значения и позиции ошибок в анализируемом датафрейме. Для поиска неверных значений была написана пользовательская функция, которая превращает все нечисловые данные в пропущенные значения (Na). Затем выдает все позиции пропусков в данных, которые потом визуализируются в изначально собранной таблице:
+
+```{r Finding inaccuracies in data,echo = FALSE, message  =  FALSE, warning=FALSE}
+data_viver <- function(search_list,frame){
+  
+  name <- names(search_list)
+  num_name <- 1
+  
+  for (stringh in search_list){
+    cat("\n")
+    print(c("col name is:",name[num_name]))
+    cat("\n")
+    
+    for (value in stringh){
+      print(c(value,"->", frame[value,name[num_name]]))
+    }
+    num_name <- num_name + 1
+  }
+}
+
+apply(is.na( apply( test_data, 2, as.numeric)),2,which) %>%
+  data_viver(test_data)
+```
+
+Как становится видно, в данных имеются как неточности, так и пропуски. В данном случае, поскольку ошибочных данных не так много и они разнообразны, то проще всего  будет произвести их исправлене вручную. Пропущенных значений тоже не слишком много, поэтому дабы минимизировать влияние на выборки было принято решение ничего с ниме не делать, лишь исключать из конкретных анализов при помощи команды “na.rm = FALSE”. В конце также показана краткая сводка того, что произошло со всеми переменными. Следует отметить, что было изменено название колонки, отвечающей за пол, поскольку оно было громоздким.Также данная колонка была переведена в фактор. По смыслу - это не численная переменная. 
+
+```{r Data cleaning,echo=FALSE, message  =  FALSE,warning=FALSE}
+colnames(test_data)[2] <- "Sex"
+test_data$Rings[3372] <- 9
+test_data$Rings = as.numeric(test_data$Rings)
+
+test_data$Sex[618] <- 3
+test_data$Sex[1374] <- 1
+test_data$Sex[1399] <- 1
+test_data$Sex <- factor(test_data$Sex,labels=c("Male","Female","Uvenil")) 
+
+test_data$Length = as.numeric(test_data$Length)
+
+test_data <- test_data[-343,]
+
+
+str(test_data)
+```
+
+Теперь, после того, как данные были преведены в порядок, можно приступать к их описанию, на основании которого будет составленно первичное представление того, с чем мы имеем дело. Для этого были использованы библиотеки “ggplot2”,“psych” и “RColorBrewer”. “ggplot2” - как основной инструмент, “psych” для получения коряляционной матрицы и базовых статистик,библиотека “RColorBrewer” использовалась как палитра.
+
+```{r pressure, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9","#009E73", 
+                "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+pairs.panels(test_data[, -2], scale=TRUE) 
+title('Correlation plot for all numeric variables',line=3)
+
+test_data %>% 
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~ key, scales = "free") +
+  geom_histogram(aes(y = ..density..),
+                 color = cbbPalette[1], fill = "white", alpha = 0.5,na.rm = TRUE, bins = 30)+
+  geom_density(fill=cbbPalette[3], alpha = 0.5,na.rm = TRUE)+
+  scale_color_brewer(palette="Dark2") +
+  ylab("Density")+
+  xlab("Value")+
+  theme_bw()+
+  ggtitle("Distribution Graph's")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+test_data%>% 
+  filter(!is.na(Sex)) %>% 
+  gather( - Sex, key = "var", value = "value") %>%
+  ggplot(aes(sample = value)) +
+  stat_qq(color=cbbPalette[1],na.rm = TRUE) +
+  stat_qq_line(color=cbbPalette[8],na.rm = TRUE)+
+  facet_wrap(~ var, scales = "free") +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Quantile-quantile plot of values")+
+  xlab("Values")+
+  ylab("Density")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+test_data%>% 
+  filter(!is.na(Sex)) %>% 
+  gather( - Sex,-Rings, key = "var", value = "value") %>%
+  ggplot(aes(y = value, x = Rings, fill = Sex)) +
+  geom_boxplot(na.rm = TRUE) +
+  facet_wrap(~ var, scales = "free") +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Box plot of values by Sex ana Rings")+
+  xlab("Rings")+
+  ylab("Values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+test_data%>% 
+  filter(!is.na(Sex)) %>% 
+  gather( - Sex, key = "var", value = "value") %>%
+  ggplot(aes(x = value, fill = Sex)) +
+  geom_density(na.rm = TRUE, alpha = 0.5) +
+  facet_wrap(~ var, scales = "free") +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Density plot of values by Sex ana Rings")+
+  xlab("Values")+
+  ylab("Density")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+```
+
+Для составления окончаначательного представления о полученных данных выведем краткую статистическую сводку при помощи библиотеки “psych” - функция “describe(test_data)[-2,]”. По мимо этого также пожно осуществить тест Шапиро-Уилка для формального взгляда на характер распределения.
+
+```{r Statistical summary, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+describe(test_data,fast = T)[-2,]
+
+lapply(test_data[,-2], shapiro.test) %>%
+  sapply( `[`, c("statistic","p.value"))%>%
+  t()
+```
+
+Становится видно, что распределение переменных не является нормальным. Согласно графикам переменные “Lenght” и “Diameter” отклонена вправо, все остальные переменные влево. Исключение составляет переменная “Height”, которая является “сжатой”, что говорит о наличии выбросов, которые явно заметны на схемах плотностей, “box plot”, “qqplot”. Таким образом, необходимо удалить выбросы в переменной “Height”. При этом выбросы в остальных переменных, за некоторым исключением, трогать не следует, так как они многочисленны и расположенн близко к друг-другу. Это может исказить результат дальнейших тестов.
+
+```{r Replace the values and display the correlation table again, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+test_data$Height[(test_data$Height > 0.3) & !is.na(test_data$Height )] <- NA
+
+pairs.panels(test_data[, -2], scale=TRUE) 
+title('Correlation plot for all numeric variables',line=3)
+
+```
+
+После удаления выбросов можно заметить, что переменная “Height” также как и переменные “Lenght” и “Diameter”отклонена вправо, однако, это отклонения выраженно в меньшей степени. Следующее, что можно увидеть - это то, что все переменные так или иначе кореллируют друг с другом. Причем линейно взаимодействуют между собой переменные “Length” и “Height”, “Length” и “Diameter”, “Diameter” и “Height”, “Whole_weight” и “Shucked_weight”, а также “Whole_weight” и “Viscera_weight”. Характер взаимодействия остальных переменных является не линейным.
+
+Подводя краткие итоги, в процессе EDA были выявлены выбросы в переменной “Height” и составленно краткое представление о взаимодействии переменных в исследуемых данных.
+
+## Работа с переменной "Length". Рассчет среднего и стандартного отклонения для молюсков разного пола
+
+Визуализируем график распределения переменной “Length” и отметим на нем среднее значение пунктиром. После этого выведем требуемые значения среднего и стандартного отклонения.
+
+```{r Distribution of the variable Length depending on gender, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+
+me <-ddply(test_data, "Sex", summarise, grp.mean=mean(Length, na.rm = T)) 
+sd_gr <- ddply(test_data, "Sex", summarise, grp.sd=sd(Length, na.rm = T))
+
+test_data%>% 
+  ggplot(aes(x = Length, color = Sex)) +
+  geom_density(alpha = 0.5,na.rm = TRUE)+
+  geom_vline(data = me, aes(xintercept=grp.mean, color=sex),
+             color=cbbPalette[6], linetype="dashed", size=1)+
+  annotate(geom = 'text', x = 0.22, y = 5, color = cbbPalette[6], 
+           label = 'Mean', hjust = -0.1)+
+  scale_color_brewer(palette="Dark2")+
+  facet_wrap(~ Sex)+
+  ylab("Density")+
+  xlab("Length")+
+  theme_bw()+
+  ggtitle("Distribution Graph of Length")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+as.data.frame(c(me,sd_gr))[,-3]
+```
+
+Согласно полученным данным становится видно, что плотность распределения всех 3 групп отклонена вправо, а также то, что среднее в группе “uvenil” отличается от средних в остальных группах.Глядя на показатели среднего отклонения можно саметить, что разброс значений по длинне у женских особей несколько меньще, нежели у мужских.
+
+## Работа с переменной Height. Процент мидий по высоте не превышающий 0.165
+
+Рассчитаем интересуемый параметр, как отношение наблюдений, непревышающих 0.165 к общему объему выборки. Будем считать, что “не превышает” означает, что наблюдения имеющие значение высоты равное 0.165 также включаются в искомый процент.После того, как значение было высчитано визуализируем его на графике плотности распределения изучаемой выборки.
+
+```{r The percentage of mussels, echo=FALSE, message  =  FALSE, warning=FALSE}
+no_more <- round(
+  (length(test_data$Height[test_data$Height <= 0.165]) / length(test_data$Height))*100,
+  0)
+
+cat("Percentage of observations not exceeding 0.165 percent = ", no_more,"%")
+
+height <- test_data %>%
+  dplyr::select(Sex,Height)%>%
+  drop_na()
+
+dat <- with(density(height$Height), data.frame(x, y))
+
+ggplot(data = dat, mapping = aes(x = x, y = y)) +
+    geom_line()+
+  geom_vline(aes(xintercept= 0.165),
+             color=cbbPalette[6], linetype="dashed", size=1)+
+  annotate(geom = 'text', x = 0.175, y = 9, color = cbbPalette[6], 
+           label = 'More then 0.165', hjust = -0.1)+
+    geom_area(mapping = aes(x = ifelse(x >= 0.165 & x < 0.25 , x, 0)), fill = cbbPalette[7])+
+  scale_x_continuous(breaks = seq(0, max(test_data$Height,na.rm = T), 0.025))+
+  ylim(0,11)+
+  ylab("Density")+
+  xlab("Height")+
+  theme_bw()+
+  ggtitle("Distribution Graph of Height")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+  
+
+
+test_data %>% 
+  ggplot(aes(x = Height, color = Sex)) +
+  geom_density(na.rm = TRUE)+
+  geom_vline(aes(xintercept= 0.165),
+             color=cbbPalette[6], linetype="dashed", size=1)+
+  annotate(geom = 'text', x = 0.05, y = 14.5, color = cbbPalette[6], 
+           label = 'More then 0.165', hjust = -0.1)+
+  scale_color_brewer(palette="Dark2")+
+  facet_wrap(~ Sex)+
+  ylab("Density")+
+  xlab("Height")+
+  theme_bw()+
+  ggtitle("Distribution Graph of Height by Sex")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+```
+
+При взгляде на график становится видно, что не многие мидии превышают 0.165 см в диаметре при этом количество особей женского пола, имеющих диаметр раковины более 0.165 см , несколько больше, чем у молюсков другого пола. Рекомендуются дальнейшие исследования.
+
+## Значение переменной Length большее 92% всех набюлюдений
+
+Рассчитаем значение длинны молюсков превышающее 92% всей выборки, применив функцию “quantile” и визуализируя полученное значение.
+
+```{r Length more then 92, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+more_then <- quantile(test_data$Length,c(92)/100,na.rm = T)
+
+cat("Displaying Value Exceeding 92 Percent Variable Length Values = ",more_then)
+
+
+height <- test_data %>%
+  dplyr::select(Sex,Length)%>%
+  drop_na()
+
+dat <- with(density(height$Length), data.frame(x, y))
+
+ggplot(data = dat, mapping = aes(x = x, y = y)) +
+    geom_line()+
+  geom_vline(aes(xintercept= 0.67),
+             color=cbbPalette[6], linetype="dashed", size=1)+
+  annotate(geom = 'text', x = 0.7, y = 2.5, color = cbbPalette[6], 
+           label = 'More then 98%', hjust = -0.1)+
+    geom_area(mapping = aes(x = ifelse(x >= 0.67 , x, 0)), fill = cbbPalette[7])+
+  scale_x_continuous(breaks = seq(0, 0.8, 0.1))+
+  scale_color_brewer(palette="Dark2") +
+  ylim(0,4)+
+  ylab("Density")+
+  xlab("Length")+
+  theme_bw()+
+  ggtitle("Displaying Value Exceeding 92 Percent Variable Length Values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 15))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+```
+
+## Z - стандартизация переменной Length
+
+Проведем Z-стандартизация для показателей длинны молюсков путем вычитания из каждого значения длинны среднего и деления разноти на стандартное отклонение. Визуализируем полученный результат.
+
+```{r Z stand, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+Length_z_score <- test_data %>%
+  dplyr::select(Rings,Sex,Length)%>%
+  mutate(Rings,Sex,Length, Length_z = scale(Length,center = T,scale = T))
+
+Length_z_score %>% #Плотность
+  ggplot(aes(x = Length_z)) +
+  geom_density(alpha = 0.5,na.rm = TRUE)+
+  geom_vline(aes(xintercept=mean(Length_z, na.rm = TRUE)),
+             color=cbbPalette[6], linetype="dashed", size=1)+
+  scale_x_continuous(breaks = seq(-5, 5, 1))+
+  scale_color_brewer(palette="Dark2") +
+  ylab("Density")+
+  xlab("Length")+
+  theme_bw()+
+  ggtitle("Distribution Graph of Standardized Length")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+```
+
+Как видно из графика среднее выборки по длинне раковины теперь равняется 0, а стандартное отклонение 1. Таким образом, Z - стандартизация прошла успешно.
+
+## Сравнение диаметра молюсков имеющих 5 и 15 колец
+
+Произведем сравнение диаметра молюсков, имеющих 5 и 15 колец. На первом этапе данного анализа визуализируем распределение показателя диаметра в зависимости от числа колец в виде "box plot" диаграммы. Для наглядности также разделим молюсков на возростные группы:  
+
+```{r Diameter and Rings part 1, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+Diameter_by_Rings <- filter(test_data,(test_data$Rings == 5) | (test_data$Rings == 15)) %>%
+  dplyr::select(Rings,Sex,Diameter)%>%
+  mutate(Rings = as.factor(Rings),Sex,Diameter)
+
+Diameter_by_Rings%>% 
+  ggplot(aes(y = Diameter, x = Rings,fill = Sex)) +
+  geom_boxplot(na.rm = TRUE) +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Box plot of Diameter by Sex ana Rings")+
+  xlab("Rings")+
+  ylab("Values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+```
+
+Как видно из графика в группе молюсков, имеющих на раковине 5 колец, наблюдается 2 явных выброса, котрые можно заменить на медианы для повышения точности анализа. После данной процедуры вновь визуализируем данные и проверим их на нормальность.
+
+```{r Diameter and Rings part 2, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+Diameter_by_Rings$Diameter[Diameter_by_Rings$Rings == 5 & 
+                             Diameter_by_Rings$Diameter >= 0.3] <- 
+  median(Diameter_by_Rings$Diameter[Diameter_by_Rings$Rings == 5])
+
+
+
+Diameter_by_Rings%>% 
+  ggplot(aes(y = Diameter, x = Rings,fill = Sex)) +
+  geom_boxplot(na.rm = TRUE) +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Box plot of Diameter by Sex ana Rings")+
+  xlab("Rings")+
+  ylab("Values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+
+test_data$Diameter[test_data$Rings == 5]%>%
+  shapiro.test()
+
+test_data$Diameter[test_data$Rings == 15]%>%
+  shapiro.test()
+
+var.test(Diameter~Rings,Diameter_by_Rings)
+
+```
+
+Проверим на нормальность группу молюсков с числом колец равным 5:
+
+```{r Diameter and Rings part 3, echo=FALSE, message  =  FALSE, warning=FALSE}
+test_data$Diameter[test_data$Rings == 5]%>%
+  shapiro.test()
+```
+
+p > 0.05 свидетельствует о невозможности отклонить гипотезу о нормальном распределении.
+
+Проверим на нормальность группу молюсков с числом колец равным 15:
+```{r Diameter and Rings part 4, echo=FALSE, message  =  FALSE, warning=FALSE}
+test_data$Diameter[test_data$Rings == 15]%>%
+  shapiro.test()
+```
+
+p > 0.05 свидетельствует о но невозможности отклонить гипотезу о нормальном распределении.
+
+Проверим равенство дисперсий рассматриваемых групп.
+
+```{r Diameter and Rings part 5, echo=FALSE, message  =  FALSE, warning=FALSE}
+var.test(Diameter~Rings,Diameter_by_Rings)
+```
+
+p > 0.05 свидетельствует о возможном равенстве дисперсий.
+
+На основании ранее проведенных тестовстан становится видно, что для сравнения различий в исследуемых группах можно применить t-тест. 
+
+```{r Diameter and Rings part 6, echo=FALSE, message  =  FALSE, warning=FALSE}
+
+Diameter_by_Rings%>% 
+  gather( - Sex,-Rings, key = "var", value = "value") %>%
+  ggplot(aes(x = value, fill = Rings)) +
+  geom_density(na.rm = TRUE, alpha = 0.5) +
+  facet_wrap(~ var, scales = "free") +
+  xlim(0.08,0.62)+
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Density plot of Diameter by Rings")+
+  xlab("Diameter")+
+  ylab("Density")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+
+
+`Rings 5 group` <- Diameter_by_Rings$Diameter[Diameter_by_Rings$Rings == 5]
+`Rings 15 group` <- Diameter_by_Rings$Diameter[Diameter_by_Rings$Rings == 15]
+
+t.test(`Rings 5 group`,`Rings 15 group`,var.equal = T)
+
+```
+
+Таким образом, из значения t-теста и визуализации данных можно достоверно утверждать о том, что показатель диаметра отлечается у молюсков с 5 и 15 кольцами. В результате этого можно предположить, что у данного вида молюсков диаметр раковины увеличевается с увеличением числа колец, что подтверждается диаграммой корелляции. Однако, данная взаимосвязь является не линейной.
+
+## Кореляция диаметра раковины с весом молюска
+
+Так как при начальной оценки данных было установленно, что диаметр раковины молюска связан с его весом нелинейно применим ранговый коофициент корелляции Спирмана.
+
+```{r Diameter and Whole weight, echo=FALSE, message  =  FALSE, warning=FALSE}
+Diameter_by_Whole_weight <- test_data%>%
+  dplyr::select(Diameter,Whole_weight)
+
+
+Diameter <- Diameter_by_Whole_weight$Diamete
+`Whole_weight` <- Diameter_by_Whole_weight$Whole_weigh
+
+cor.test(Diameter, `Whole_weight`,method=c( "spearman"))
+
+ggscatter(Diameter_by_Whole_weight, x = "Diameter", y = "Whole_weight", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "spearman",
+          xlab = "Diameter", ylab = "Whole weight", 
+          title = 'Correlation plot for Diameter and Whole weight')
+
+```
+
+
+Таким образом, диаметр раковины имеет сильную взаимосвязь с весом молюска.
+
+
+
+
+
+
