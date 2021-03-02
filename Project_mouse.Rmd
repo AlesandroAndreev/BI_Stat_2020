@@ -1,0 +1,445 @@
+---
+title: "Мыши"
+author: "First project by Alexander Andreev"
+date: "2/23/2021"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    number_section: yes
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+# Третье проектное задание:"Мыши"
+
+## Создание набора данных для анализа и его описание
+
+Исследуемый набор данных состоит из уровней экспрессии 77 белков / модификаций белков, которые производили детектируемые сигналы в ядерной фракции коры. Было 38 контрольных мышей и 34 трисомических мыши (синдром Дауна), всего 72 мыши. В экспериментах было зарегистрировано 15 измерений каждого белка на образец / мышь. Таким образом, для контрольных мышей существует 38x15 или 570 измерений, а для трисомных мышей - 34x15 или 510 измерений. Набор данных содержит в общей сложности 1080 измерений на белок. Каждое измерение можно рассматривать как независимый образец / мышь.
+
+Восемь классов мышей описаны на основе таких характеристик, как генотип, поведение и лечение. По генотипу мыши могут быть контрольными или трисомными. В соответствии с поведением некоторые мыши были стимулированы к обучению (context-shock), а другие нет (shock-context), и для того, чтобы оценить влияние препарата "мемантин" на восстановление способности к обучению у трисомных мышей, некоторые мыши были подвергнуты стимуляции через введение препарата, а другие нет.
+
+Всего в эксперименте можно выделить 8 классов мышей:
+
+1) c-CS-s: контрольные мыши, стимулированные к обучению, инъецированные физиологическим раствором (9 мышей)
+2) c-CS-m: контрольные мыши, стимулированные к обучению, инъецированные мемантином (10 мышей)
+3) c-SC-s: контрольные мыши , не стимулировали к обучению, инъецировали физиологический раствор (9 мышей)
+4) c-SC-m: контрольные мыши, не стимулировали к обучению, инъецировали мемантин (10 мышей)
+
+5) t-CS-s: мыши с трисомией, стимулированные к обучению, инъецированные физиологическим раствором (7 мышей)
+6) t-CS-m: мыши с трисомией, стимулированные к обучению, инъецированные мемантином (9 мышей)
+7) t-SC-s: мыши с трисомией, не стимулировали к обучению, вводили физиологический раствор (9 мышей)
+8) t-SC-m: мыши с трисомией, не стимулировали к обучению, инъецировали мемантин (9 мышей)
+
+Для анализа данных были загружены следующие пакеты:
+
+```{r packeges, message  =  FALSE}
+require(xlsx)
+require(dplyr)
+require(tidyverse)
+require(plyr)
+require(psych)
+require(car)
+require(corrplot)
+require(ggpubr)
+require(multcomp)
+require(PerformanceAnalytics)
+require(vegan)
+require(factoextra)
+```
+
+Загрузим данные и выведем их содержимое:
+
+```{r import data,echo=FALSE, message  =  FALSE, warning=FALSE}
+
+script_path <- rstudioapi::getActiveDocumentContext()$path
+
+path <- dirname(script_path) %>%
+  list.files( "*.xls",full.names = TRUE)
+
+data_of_mice <- read.xlsx(path,sheetIndex = 1)
+str(data_of_mice)
+
+```
+
+Становится видно, что исследуемые данные имеют 82 переменные из которых 78 количественные и 4 качественные. Проверим количественые переменные на наличее пропущенных значений:
+
+```{r Finding inaccuracies in data,echo = FALSE, message  =  FALSE, warning=FALSE }
+
+table(is.na(data_of_mice))
+
+```
+
+Анализ показал большое число пропусков значений в данных. Удалим строки с пропусками и выведем результат:
+
+```{r clean data,echo = FALSE, message  =  FALSE, warning=FALSE}
+data_of_mice_without_na <- na.omit(data_of_mice)
+str(data_of_mice_without_na)
+```
+
+От 1080 наблюдений осталось всего 552. Выведем количество значений по группам для изначального и модифицированного наборов данных.
+
+```{r See groups, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+table(data_of_mice$class)
+table(data_of_mice_without_na$class)
+
+```
+
+Согласно представленным таблицам, исследуемые группы имеют неравное число наблюдений в своем составе, что может отразиться на дальнейшем анализе. Следует отметить, что при удалении строчек с пропущенными значениями нарушение бланса между группами возрастает. Также поскольку количество пропусков крайне велико их замена на какие-либо другие значения способно исказить последующий анализ. Таким образом лучшим выходом из данной ситуации будет оставить dataset в своем изначальном виде.
+
+## Есть ли различия в уровне продукции BDNF_N в зависимости от класса в эксперименте
+
+Выведем  график зависимости экспрессии BDNF от экспериментальных классов.
+```{r Graph_of_BNDF, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+ggplot(data_of_mice, aes(class, BDNF_N, color = class)) + 
+  stat_summary(fun.data = "mean_cl_normal") + 
+  ggtitle("Dependency graph of BDNF_N values by Class")+
+  xlab("Class")+
+  ylab("BDNF_N values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+
+
+
+data_of_mice%>% 
+  ggplot(aes(y = BDNF_N,fill = class)) +
+  geom_boxplot(na.rm = TRUE) +
+  theme_bw()+
+  scale_color_brewer(palette="Dark2") +
+  ggtitle("Box plot of BDNF_N values by Class")+
+  xlab("Class")+
+  ylab("BDNF_N values")+
+  theme(plot.title = element_text(hjust = 0.5,size = 20))+
+  theme(axis.title.x = element_text(size = 15))+
+  theme(axis.title.y = element_text(size = 15))
+
+```
+
+Согласно построенному графику можно первоначально предположить, что экспрессия BDNF у контрольных мышей стимулированных к обучению будет отличаться от таковой у остальных классов и иметь наиболее выcокие значения. Наиболее низкме значения, статестически отличные от значений в остальных классах будут наблюдаться у контрольных мышей не стимулированных к обучению, инъецированных физиологическим раствором. Несколько более высокий уровень будет наблюдаться у контрольных мышей не стимулированных к обучению, инъецированных мемантином и мышей с трисомией стимулированых к обучению. Отдельную группу с еще более высокими значениями экспрессии BDNF образуют не стимулированные к обучению мыши с трисомией.
+
+График box-plot демонстрирует наличие не значительного числа выбросов в большинстве классов. 
+
+После общего описания данных прейдм к множественному сравнению при помощи однофактороного ANOVA. В начале построим линейную модель зависимости экспресии BDNF от экспериментальных классов и выведем ее описание:
+
+```{r BNDF_groups_satystic_lm, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+mod_BDNF <- lm(BDNF_N ~ class, data = data_of_mice)
+summary(mod_BDNF)
+
+```
+
+Полученные данные демонстрируют вклад всех классов за исключением контрольных мышей , не стимулированных к обучению, инъецированных физиологическим раствором. 
+
+Проведем анализ Anova и выведем результат:
+
+```{r BNDF_groups_satystic_Anova, echo = FALSE, message  =  FALSE, warning=FALSE}
+amoeba_anova <- Anova(mod_BDNF)
+amoeba_anova
+```
+
+Согласно проведенному анализу экспериментальные классы мышей демонстрируют различные уровни продукции BDNF. Проверем корректность проведенного анализа. Построим график расстояний Кука и график остатков. 
+
+```{r BNDF_groups_satystic_post_hock_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+mod_diag <- fortify(mod_BDNF)
+
+ggplot(mod_diag, aes(x = 1:nrow(mod_diag), y = .cooksd)) + geom_bar(stat = "identity") + ggtitle("График расстояний Кука")
+
+ggplot(mod_diag, aes(x = class, y = .stdresid)) + geom_boxplot() + ggtitle("График остатков")
+```
+
+График растояний Кука в нормк. График остатков демонстрирует выбросы, однако box-plots расположены равномерно, их медианы располагаются на 1 уровне, что сведетельствует о равномерном разбросе остатков. Дополнительно построим квантильный график остатков.
+
+```{r BNDF_groups_satystic_applicability_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+qqPlot(mod_BDNF, id = FALSE, main = "Квантильный график остаков")
+
+```
+
+Становится видно, что величина распределена приблизительно нормально, таким образом, действительно, экспериментальные классы мышей демонстрируют различные уровни продукции BDNF. Осталось выяснить какие группы различаются между собой для этого применим пост - хок тест Тьюки.
+
+```{r BNDF_groups_satystic_summary, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+post_hoch <- glht(mod_BDNF, linfct = mcp(class = "Tukey"))
+result<-summary(post_hoch)
+result
+
+```
+
+Многие классы демонстрируют различия. Глядя на данную таблицу можно предположить, что трисомия и наличие стимулирования к обучению способны менять уровень экспрессии BNDF у мышей. Также следует отметить, что при некоторых стечениях обстоятельств также на продукцию BNDF у мышей  способна влиять инъекция мемонтина (c-SC-s - c-SC-m ). Данный вопрос требует дополнительного изучения.
+
+## Построение линейной модели, предсказывающей уровень продукции белка ERBB4_N на основании данных о других белках в эксперименте
+
+Для упрощению вычислений из 4 - х факторных переменых оставим одну - "class", поскольку она должна отражать в себе оставшиеся 3 переменные. Также ввиду того, что данные содержат большое количествоколичественых переменных, адекватно визуализировать их корреляциионую матрицу не представляется возможным, поэтому было принято решение применить пользовательскую функцию от Catherine Williams доступный по адресу https://towardsdatascience.com/how-to-create-a-correlation-matrix-with-too-many-variables-309cc0c0a57. Суть применяемой функции сводится к преобразованию всех переменных в числовые значения. Затем код удаляет дубликаты и точные корреляции. Далее код настраивает таблицу данных, чтобы увидеть необработанные корреляции в таблице, поскольку необработанные числа могут быть полезны. Фрейм данных сортируется по наивысшей корреляции. Чтобы уменьшить огромное количество переменных, выбираются только переменные, превышающие определенный порог уровня значимости, установленный на 0,45. Результаты будут выведены в виде графика. Только корреляции с достаточно высоким уровнем значимости будут отмечены цветным кружком. Это дополнительно помогает вырезать шум.
+
+```{r ERBB4_N_data, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+data_for_ERBB4_N_model <- data_of_mice[,c(-1,-78,-79,-80,-81)]
+
+
+corr_simple <- function(data,sig=0.45){
+  
+  df_cor <- data %>% mutate_if(is.character, as.factor)
+  df_cor <- df_cor %>% mutate_if(is.factor, as.numeric)
+  
+  corr <- cor(df_cor)
+  
+  corr[lower.tri(corr,diag=TRUE)] <- NA 
+  
+  corr[corr == 1] <- NA 
+  
+  corr <- as.data.frame(as.table(corr))
+  
+  corr <- na.omit(corr) 
+  
+  corr <- subset(corr, abs(Freq) > sig) 
+  
+  corr <- corr[order(-abs(corr$Freq)),] 
+  
+  print(corr)
+  
+  mtx_corr <- reshape2::acast(corr, Var1~Var2, value.var="Freq")
+  
+ 
+  corrplot(mtx_corr, is.corr=FALSE, tl.col="black", na.label=" ")
+}
+
+corr_simple(data_for_ERBB4_N_model)
+
+```
+
+После ознакомления с корреляциями пранализируем зависимую переменную на нормальность, построив qqplot.
+
+```{r ERBB4_N_normality, echo = FALSE, message  =  FALSE, warning=FALSE}
+ggqqplot(data_of_mice$ERBB4_N)
+
+ggdensity(data_of_mice$ERBB4_N, 
+          main = "Density plot of tooth length",
+          xlab = "Tooth length")
+
+```
+
+Становится видно, что данные об экспрессии ERBB4 распределены относительно нормально. Далее приступаем к построению модели. Следует отметить, что поскольку все данные в таблице - это белковая экспрессия стандартизацию можно не прводить в следствии одинаковой размерности предикторов.
+
+Таким образом, основываясь на данных корреляционной матрицы зададим модель следующим образом: ERBB4_N ~ P70S6_N +  pGSK3B_N + AcetylH3K9_N + RRP1_N  + IL1B_N + CDK5_N + S6_N + BAX_N + GluR3_N  + SHH_N  + class , data = data_for_ERBB4_N_model и выведем результаты.
+
+```{r ERBB4_N_model_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+ERBB4_mod_1 <- lm(ERBB4_N ~ P70S6_N +  pGSK3B_N + AcetylH3K9_N + RRP1_N  + IL1B_N + CDK5_N + S6_N + BAX_N + GluR3_N  + SHH_N  + class , data = data_for_ERBB4_N_model)
+
+
+
+summary(ERBB4_mod_1)
+vif(ERBB4_mod_1)
+
+```
+
+Исключим незначимые предикторы с большим VIF.
+
+
+```{r ERBB4_N_model_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+ERBB4_mod_2 <- update(ERBB4_mod_1, .~. -S6_N)
+
+
+
+summary(ERBB4_mod_2)
+vif(ERBB4_mod_2)
+```
+
+```{r ERBB4_N_model_3, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+ERBB4_mod_3 <- update(ERBB4_mod_2, .~. -GFAP_N, -SHH_N, -CDK5_N)
+
+
+
+summary(ERBB4_mod_3)
+vif(ERBB4_mod_3)
+```
+
+Теперь после того как все предикторы подобраны, проведем тест полученной модели:
+
+```{r ERBB4_N_model_test_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+ERBB4_mod_3_diag <- data.frame(fortify(ERBB4_mod_3), data_for_ERBB4_N_model[, !names(data_for_ERBB4_N_model) %in% c("P70S6_N", "pGSK3B_N", "AcetylH3K9_N", "RRP1_N" ,"IL1B_N","CDK5_N","BAX_N","GluR3_N","SDK5_N","SHH_N","class")] )
+
+
+
+gg_resid <- ggplot(data = ERBB4_mod_3_diag, aes(x = .fitted, y = .stdresid)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0) +
+  geom_smooth(method = "lm") +
+  geom_hline(yintercept = 2, color = "red") +
+  geom_hline(yintercept = -2, color = "red")
+gg_resid
+
+```
+
+График остатков выходит за пределы 2 - х стандартных отклонений, что свидетельствует о неточности модели. 
+
+```{r ERBB4_N_model_with_test_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+ggplot(ERBB4_mod_3_diag, aes(x = 1:nrow(ERBB4_mod_3_diag), y = .cooksd)) + 
+  geom_bar(stat = "identity") + 
+  geom_hline(yintercept = 2, color = "red")
+
+```
+
+График расстояний Кука выглядит приемлемо. Превышение границы в 2 не наблюдается.
+
+```{r ERBB4_N_model_test_3, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+qqPlot(ERBB4_mod_3_diag$.stdresid)
+
+```
+
+qqPlot ведет себя относительно стабильно, однако по краям наблюдаются выбросы. 
+
+Подводя итоги можно предположить, что точность модели можно повысить путем проверки предикторов на выбросы и исключения их из выборки. Проиллюстрируем данную гипотизу выводом матрицы корреляций для предикторов используемых в модели:
+
+```{r ERBB4_N_model_test_3_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+chart.Correlation(data_for_ERBB4_N_model[, names(data_for_ERBB4_N_model) %in% c("P70S6_N", "pGSK3B_N", "AcetylH3K9_N", "RRP1_N" ,"IL1B_N","BAX_N","GluR3_N")])
+```
+
+Действительно, становится видно, что резульаты экспрессии RRP1, AcetylH3K9 имеют выбросы. На данном этапе необходимо принять решение: Производить дальнейшие манипуляции или переходить к другим методам анализа. В данном случае имеет смысл выбрать 2 вариант, ввиду того, что датасет содержит большое число переменных с автокорелляциями и выбросами отследить которые все до единого не представляется возможным (с учетом предсказательной возможности модели в 0,67). Все это свидетельствует о том, что правильным выходом из данной ситуации может быть PCA - анализ.
+
+## PCA - анализ
+
+Возьмем датасет с удаленными значениями Na, так как функция rda не работает с пустыми значениями. Проведем ординацию и выведем результат:
+
+```{r PCA_start, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+df_analys <- data_of_mice_without_na[, -1] %>% mutate_if(is.character, as.factor)%>%
+  mutate_if(is.factor, as.numeric)
+
+mice_pca <- rda(df_analys, scale = TRUE)
+head(summary(mice_pca))
+
+```
+
+Как можно видеть из summary, первые  4 компонента объясняют 65% выборки. 
+
+```{r PCA_components_graph, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+pca_summary <- summary(mice_pca)
+pca_result <- as.data.frame(pca_summary$cont)
+
+plot_data <- as.data.frame(t(pca_result[c("Proportion Explained"),c(1,2,3,4,5,6)]))
+plot_data$component <- rownames(plot_data)
+
+screeplot(mice_pca, type = "lines", bstick = TRUE)
+
+ggplot(plot_data, aes(component, `Proportion Explained`)) + geom_bar(stat = "identity") + theme_bw()
+
+```
+
+Как видно из графиков, вклад различных компонент в объяснения изменчивости существеннен до PC5. Таким образом, ее тоже придется включить. Выведем влияния компонент на исследуемые переменные и попытаемся интерпретировать результат:
+
+```{r PCA_summary, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+scores(mice_pca, display = "species", 
+       choices = c(1, 2, 3,4,5), scaling = 0)
+
+
+```
+
+По скольку переменных очень много интерпретируем только те, котрые рассматривались в первых 2 - х разделах настоящей работы. Так, при увеличении всех 5 компонент значение экспрессии BDNF снижается и, напротив, экспрессия ERBB4 увеличевается при росте всех компонент, кроме 1.
+
+Посторим график ординации в осях главных компонент разделенных по классам:
+
+```{r PCA_ordination_graph_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+  df_scores <- data.frame(data_of_mice_without_na,
+                        scores(mice_pca, display = "sites", choices = c(1, 2, 3), scaling = "sites"))
+
+p_scores <- ggplot(df_scores, aes(x = PC1, y = PC2)) + 
+  geom_point(aes( color = class), alpha = 0.5) +
+  coord_equal(xlim = c(-1.2, 1.2), ylim = c(-1.2, 1.2)) + ggtitle(label = "Ординация в осях главных компонент") + theme_bw()
+p_scores
+```
+
+```{r PCA_ordination_graph_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+terapod_pca_base<- prcomp(df_analys, scale = TRUE)
+
+
+
+fviz_pca_ind(terapod_pca_base,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = data_of_mice_without_na$class, # color by groups
+             palette = "Dark2",
+             addEllipses = TRUE, # Concentration ellipses
+             legend.title = "Class"
+             )
+```
+ 
+ На данных графиках слабо видны различия между группами. Посмотрим что покажут данные nMDS. 
+ 
+```{r PCA_nMDS_1, include=FALSE}
+
+ord<-metaMDS(comm = df_analys, distance = "bray",autotransform = F)
+
+```
+
+```{r PCA_nMDS_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+
+ord
+
+ord_pt <- data.frame(data_of_mice_without_na, scores(ord, display = "sites"))
+
+ggplot(ord_pt, aes(NMDS1, NMDS2, color = class))+geom_point()+ggtitle(label = "Ординация nMDS")
+
+```
+
+Применем метод вычисления расстояний bray, так как при его использовании показатель Stress максимален и равен 0.23, что превышает значение в 0.15. Тоесть качество ординации - приемлемо. Из графика можно видеть, что происходит разделение данных по наличию стимуляции к обучнению и диагнозу, что совподает с данными полученными в процессе ранее проведенной Anova.
+
+Попробуем провести  perMANOVA - анализ, чтобы понять, как именно различаются исследуемые группы. Для выравнивание значений в данных проведем их центрирование с логарифмированием. Результаты выведем ввиде box-plot.
+
+```{r perMANOVA_1, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+log_centaurium <- log(df_analys[c(1:77)] + 1)
+
+center <- function(x){
+  x - mean(x, na.rm = TRUE)
+}
+
+dbcent <- t(apply(log_centaurium, 1, center))
+center_log_centaurium <- apply(t(dbcent), 1, center)
+
+boxplot(center_log_centaurium)
+
+
+```
+
+Как видно из графика, центрирование удалось, однако, во всех переменных присутствует большое число выбросов, что скорей всего негативно отразится на дальнейшем анализе. Проверим на сколько сильно различаются дисперсии в группах:
+
+
+```{r perMANOVA_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+dist_centaurium <- vegdist(center_log_centaurium, method  = "euclidean")
+PCO_centaurium <- betadisper(dist_centaurium, df_analys$class)
+plot(PCO_centaurium)
+anova(PCO_centaurium)
+```
+
+Как видно из анализа Anova для дисперсий и графика, дисперсии различаются, perMANOVA делать нельзя.
+
+## Выводы
+
+    1) Можно утверждать, что экспрессия белков различается в экспериментальных группах. Различия в группах обусловленны в большей степени диагнозом и стимуляцией к обучению и в меньшей степени инъекцией мемантина.
+    2) Основная проблема даннных - это выбросы. В данном случае чистка является не тревиальным процессом в силу огромного числа переменных и выбросов. Без выполнения данного условия построение качественной дисперсионной модели и осуществление perMANOVA - анализа - затруднительно. 
