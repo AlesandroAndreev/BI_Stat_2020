@@ -1,0 +1,245 @@
+---
+title: "Project4_Survival"
+author: "Alexander Andreev"
+date: "3/8/2021"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    number_section: yes
+  word_document:
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+require(survival)
+require(ggplot2)
+require(dplyr)
+require(survminer)
+require(ggfortify)
+```
+
+# Минипроект. Выживание
+
+## EDA
+
+Загрузим изучаемые данные и выведем о них краткую сводку:
+
+```{r ovarian, echo = FALSE, message  =  FALSE, warning=FALSE}
+data <- ovarian
+head(data)
+str(data)
+```
+Становится видно, что рассматриваемый датасет содержит в себе 6 численных переменных:
+
+1) futime:	время выживания в днях;
+2) fustat: статус цензуры (0 = погиб, 1 = зацензурен);
+3) age:	возраст пациента;
+4) resid.ds: имеется ли у пациента остаточное заболевание после лечения (1 = нет, 2 = да);
+5) rx:	тип лечения применяемый к пациенту;
+6) ecog.ps:	статус пациента по классификации ECOG (1 - после лечения дееспособен , 2 - после лечения частично дееспособен).
+
+Построим несколько диаграм для составления краткого субъективного представления о данных:
+
+```{r futime status_points, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+ggplot(data = data, aes(y = futime, x = as.factor(fustat)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 1300, 50)) +
+  labs(title = "Censoring status of pacients by Censoring time ")+
+  theme(plot.title = element_text(color = "red", size = 15, face = "bold"))+
+  ylab("Censoring time")+
+  xlab("Censoring status")
+
+ggplot(data = data, aes(y = futime, x = as.factor(ecog.ps)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 1300, 50)) +
+  labs(title = "Residual disease present by Censoring time ")+
+  theme(plot.title = element_text(color = "red", size = 15, face = "bold"))+
+  ylab("Censoring time")+
+  xlab("CECOG performance status")
+
+ggplot(data = data, aes(y = futime, x = as.factor(resid.ds)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 1300, 50)) +
+  labs(title = "ECOG performance status by Censoring time ")+
+  theme(plot.title = element_text(color = "red", size = 15, face = "bold"))+
+  ylab("Censoring time")+
+  xlab("residual disease present")
+
+
+
+```
+
+При рассмотрении точечных графиков, где по оси y была отложенна переменная futime, становится видно, что после 650 суток статус цензуры всегда принимает значение 0, т.е. пациент погибает.
+
+
+```{r age status_points, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+ggplot(data = data, aes(y = age, x = as.factor(fustat)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 80, 2)) +
+  labs(title = "Censoring status of pacients by Age ")+
+  theme(plot.title = element_text(color = "red", size = 20, face = "bold"))+
+  ylab("Age")+
+  xlab("Censoring status")
+
+ggplot(data = data, aes(y = age, x = as.factor(ecog.ps)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 80, 2)) +
+  labs(title = "Residual disease presentof pacients by Age ")+
+  theme(plot.title = element_text(color = "red", size = 15, face = "bold"))+
+  ylab("Age")+
+  xlab("Residual disease present")
+
+ggplot(data = data, aes(y = age, x = as.factor(resid.ds)))+
+  geom_point() +
+  scale_y_continuous(breaks = seq(0, 80, 2)) +
+  labs(title = "ECOG performance status  of pacients by Age ")+
+  theme(plot.title = element_text(color = "red", size = 15, face = "bold"))+
+  ylab("Age")+
+  xlab("ECOG performance status")
+  
+
+```
+
+Также, если по оси y отложить возраст пациентов можно заметить, что самому младшиму пациенту около 39 лет, а самому старшему около 75 лет. К томуже, глядя на данные графики можно увидеть, что у более пожилых пациентов наблюдается наличие остаточных заболеваний после лечения и качество их жизни в дальнейшом ниже, чем у более молодых.
+
+Следует отметить, что переменная Age является дискретной переменной, сдесь же она представленна как неприрывная. Таким образом для упрощения анализа данных было принято решение о превращении переменной Age в фактор. Для лучшего понимаю того, на какие группы следует разбивать данные выведем их частотную гистограмму. 
+
+```{r age histo, echo = FALSE, message  =  FALSE, warning=FALSE}
+ggplot(data = data, aes(x = age))+
+  geom_histogram(bins = 10, color="black", fill="lightblue")+
+  labs(title = "Age frequency ")+
+  scale_x_continuous(breaks = seq(38, 77, 1))+
+  theme(plot.title = element_text(color = "red", size = 20, face = "bold"))
+```
+
+На графике видно разделение межу возрастными группами на границе в 50 лет. Тоесть, делим данные на 2 интервала [39,50) и [50,75].  
+Аналогичным образом превратим переменные rx, resid.ds и ecog.ps в фактор и дадим названия уровням, чтобы в дальнейшем не запутаться с 0 и 1.
+
+```{r transformation, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+data <- data %>% mutate(age_group = ifelse(age >=50, "old", "young"))
+data$age <- factor(data$age_group)
+
+data$rx <- factor(data$rx, 
+                     levels = c("1", "2"), 
+                     labels = c("First_method", "Second_method"))
+data$resid.ds <- factor(data$resid.ds, 
+                           levels = c("1", "2"), 
+                           labels = c("no", "yes"))
+data$ecog.ps <- factor(data$ecog.ps, 
+                          levels = c("1", "2"), 
+                          labels = c("good", "bad"))
+```
+
+Выведем результат преобразования на экран:
+
+```{r transformation_result, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+head(data)
+str(data)
+
+```
+## Кривые Каплана-Мейра и сравнение групп при помощи лонг - ранг тестов
+
+Поскольку в первую очередь для исследования представляют интерес данные о выживаемость пациентов с течением времени, необходимо построить временную шкалу выживаемости:
+
+```{r survival, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+surv_object <- with(data, Surv(futime, fustat))
+head(surv_object,80)
+
+```
+
+Теперь можно построить линейную модель учитывающую изменение в выживаемости на основании факторов в зависимости от времени:
+
+```{r survival_model, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+model_surv_1 <- survfit(surv_object ~ rx, data = data)
+summary(model_surv_1)
+
+```
+
+Построим кривые Каплана - Мейра по полученной модели и применим лог-ранг тесты сравнения групп:
+
+```{r Kaplan, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+autoplot(model_surv_1)
+survdiff(Surv(futime, fustat) ~ rx, data = data)
+
+```
+
+Глядя на лог-ранг тест и график становится видно, что ни один из применяемых методов лечения не был значительно лучше, хотя пациенты, получавшие лечение 2, чувствовали себя лучше в первый месяц наблюдения. 
+
+Теперь построим такую же модель, только в зависимости от наличия остаточного заболевания у пациентов:
+
+```{r Kaplan_2, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+model_surv_2 <- survfit(surv_object ~ resid.ds, data = data)
+autoplot(model_surv_2)
+survdiff(Surv(futime, fustat) ~ resid.ds, data = data)
+
+```
+Кривые расходятся рано и критерий лог-ранг теста почти значим. 
+
+Проведем точно такой же анализ для преременных age и ecog.ps.
+
+```{r Kaplan_3, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+model_surv_2 <- survfit(surv_object ~ age_group, data = data)
+autoplot(model_surv_2)
+survdiff(Surv(futime, fustat) ~ age_group, data = data)
+
+```
+```{r Kaplan_4, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+model_surv_2 <- survfit(surv_object ~ ecog.ps, data = data)
+autoplot(model_surv_2)
+survdiff(Surv(futime, fustat) ~ ecog.ps, data = data)
+
+```
+Значимого влияния возраста или ECOG на выживаемость не выявлено.
+
+## Оценка факторов влияющих на риск
+
+Для более систематического взгляда на разные ковариаты применим модель Кокса. Построим модель пропорциональных опасностей Кокса:
+
+```{r Koks, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+model_surv_coxph <- coxph(surv_object ~ rx + resid.ds + age_group + ecog.ps, data = data)
+summary(model_surv_coxph)
+autoplot(survfit(model_surv_coxph))
+
+```
+
+Визуально оценим вклад каждого из факторов в моделе выживаемости:
+
+```{r Multi, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+multi_surv_model <- aareg(surv_object ~ rx + resid.ds + age_group + ecog.ps, data = data)
+autoplot(multi_surv_model)
+```
+
+Теперь, построим график отношения рисков:
+
+```{r HR, echo = FALSE, message  =  FALSE, warning=FALSE}
+
+ggforest(model_surv_coxph, data = data)
+
+```
+
+Данная схема иллюстрирует, что лечение, наличие остаточного заболевания и возраст оказывают значительное воздействие на величину риска смерти для пациента. Так, риск умереть для молодого пациента принимающего второй вариант лечения с наличием остаточного заболевания  будет меньше, чем для пожилого пациента без остаточного заболевания, принимающего первый вариант лечения. 
+
+## Выводы
+
+Таким образом, было установлено, что результаты кривых Каплана-Мейра и лонг - ранг тестов отличаются от результатов модели Кокса. Это скорей всего обусловлено тем, что первый оценивает вероятность выживания, второй рассчитывает риск смерти и соответствующие коэффициенты риска. По данным полученным при построении модели Кокса, второй вариант лечения явяляется более эффективным и соответствует 20 % шансу более раннего наступления события цензурирования (выздоровления). Следует отметить, что по скольку конечное событие - это именно цензурирование, то о превосходстве второго метода над первым утверждать еще рано, поскольку неизвестно, что произошло с пациентами после цензурирования. Необходимы дополнительные испытания.
+
+
+
